@@ -1,0 +1,16 @@
+[Unit]
+Description=PagePort Agent HTML Publisher
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pageport
+EnvironmentFile=/opt/pageport/.env
+ExecStart=/usr/bin/node /opt/pageport/server.js
+Restart=always
+RestartSec=3
+User=pageport
+Group=pageport
+
+[Install]
+WantedBy=multi-user.target
