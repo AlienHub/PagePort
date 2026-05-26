@@ -1,45 +1,103 @@
-# publish-html-artifact
+---
+name: publish-html-artifact
+description: Use when an agent needs to publish, share, upload, host, preview, or send a completed single-file HTML artifact through PagePort and return a browser URL.
+---
 
-Use this skill when the user asks to publish, share, upload, host, preview, or send a completed HTML artifact through PagePort.
+# PagePort HTML Publishing
 
-## Requirements
+Publish one completed HTML artifact to PagePort, a small service that accepts an authenticated `POST /v1/publish`, stores the HTML, and returns a human-openable `/v/:id` URL.
 
-- The artifact must be one HTML string.
-- Do not publish secrets, credentials, private raw data, or content the user did not intend to share.
-- Authenticate with `Authorization: Bearer $PAGEPORT_AGENT_TOKEN`.
-- `ttl_seconds` defaults to 7 days, must be 300 to 2592000 seconds.
-- If `password` is omitted or empty, the URL is public.
-- If `password` is set, the service encrypts HTML before storing it.
+## Before Publishing
 
-## Workflow
+- Publish only content the user intended to share. Do not publish secrets, credentials, private raw data, environment dumps, local paths containing sensitive names, or hidden chain-of-thought.
+- The artifact must be one HTML string. If given a fragment, PagePort will wrap it, but prefer a complete document with `<!doctype html>`, `<html>`, `<head>`, charset, viewport, and `<body>`.
+- Default max HTML size is 2,000,000 bytes. Check size before uploading when the artifact may be large.
+- `ttl_seconds` defaults to 604800 seconds (7 days). Unless the deployment is configured differently, valid values are 300 to 2592000 seconds.
+- Omit `password` for a public URL. Set `password` only when the user asked for password protection or the content is sensitive enough that sharing a public link would be inappropriate.
 
-1. Read or generate the final HTML.
-2. Check that it is within the configured size limit.
-3. Call the PagePort publish endpoint:
+## Environment
+
+Use these variables when available:
+
+- `PAGEPORT_ENDPOINT`: full publish endpoint, for example `https://share.example.com/v1/publish`.
+- `PAGEPORT_ORIGIN`: service origin; use `${PAGEPORT_ORIGIN}/v1/publish` when `PAGEPORT_ENDPOINT` is not set.
+- `PAGEPORT_AGENT_TOKEN`: bearer token used in `Authorization: Bearer ...`.
+- Optional: `PAGEPORT_PASSWORD`, `PAGEPORT_TTL_SECONDS`.
+
+If the endpoint or token is missing, tell the user which variable is missing. Do not invent a token.
+
+## Recommended Workflow
+
+1. Finish the HTML artifact and save it to a local file if it is not already in one.
+2. Inspect for accidental secrets or private data.
+3. Check byte size:
 
 ```bash
-curl -X POST "$PAGEPORT_ORIGIN/v1/publish" \
-  -H "authorization: Bearer $PAGEPORT_AGENT_TOKEN" \
-  -H "content-type: application/json" \
-  -d '{
-    "title": "Artifact title",
-    "html": "<!doctype html><html>...</html>",
-    "ttl_seconds": 604800,
-    "password": "optional-view-password",
-    "metadata": {
-      "agent": "codex",
-      "run_id": "current-run-id"
-    }
-  }'
+node -e "const fs=require('node:fs'); const p=process.argv[1]; console.log(Buffer.byteLength(fs.readFileSync(p,'utf8'),'utf8'))" path/to/artifact.html
 ```
 
-4. Verify the returned `url` is reachable.
-5. Return the URL, mode, and expiry to the user.
+4. Publish with the bundled helper script when this skill is available as files:
+
+```bash
+node skill/publish-html-artifact/scripts/publish-pageport.mjs path/to/artifact.html "Artifact title"
+```
+
+5. If the helper script is not available, use a small Node script or `fetch` call that JSON-encodes the HTML with `JSON.stringify`; avoid embedding raw HTML inside a shell-quoted JSON string.
+6. Verify the returned viewer URL with `GET`. For public pages, a `200` viewer response is enough; do not fetch and print private unlocked HTML.
+7. Return only the useful share details to the user: URL, mode, expiry, and password delivery guidance if relevant.
+
+## API Shape
+
+Request:
+
+```json
+{
+  "title": "Artifact title",
+  "html": "<!doctype html><html>...</html>",
+  "ttl_seconds": 604800,
+  "password": "optional-view-password",
+  "metadata": {
+    "agent": "codex",
+    "run_id": "optional-run-id"
+  }
+}
+```
+
+Response on success (`201`):
+
+```json
+{
+  "id": "page_id",
+  "url": "https://share.example.com/v/page_id",
+  "mode": "public",
+  "expires_at": "2026-06-02T00:00:00.000Z",
+  "size_bytes": 12345,
+  "sha256": "hex"
+}
+```
+
+Common failures:
+
+- `400`: invalid JSON, missing `html`, or invalid `ttl_seconds`.
+- `401`: missing or invalid bearer token.
+- `413`: payload too large.
+- `410` from viewer: page expired.
 
 ## Output Style
+
+For public pages:
+
+```text
+Published: https://share.example.com/v/abc123
+Mode: public
+Expires: 2026-06-02T00:00:00.000Z
+```
+
+For password-protected pages, never print the password unless the user explicitly asked you to generate and show it:
 
 ```text
 Published: https://share.example.com/v/abc123
 Mode: encrypted
 Expires: 2026-06-02T00:00:00.000Z
+Password: use the value shared separately.
 ```

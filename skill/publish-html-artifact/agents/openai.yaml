@@ -1,0 +1,7 @@
+interface:
+  display_name: "Publish HTML Artifact"
+  short_description: "Publish a single HTML artifact with PagePort"
+  default_prompt: "Use $publish-html-artifact to publish this completed HTML artifact and return a share URL."
+
+policy:
+  allow_implicit_invocation: true
