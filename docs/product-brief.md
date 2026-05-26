@@ -1,54 +1,34 @@
 # Product Brief
 
+PagePort is now a Cloudflare-only Agent HTML Share MVP.
+
 ## Positioning
 
-PagePort publishes HTML artifacts made by agents.
+Agents upload a single HTML string through an authenticated API. PagePort stores the page in private Cloudflare R2, stores metadata in Cloudflare D1, and returns a URL that a human can open in a browser.
 
-It is not a general static hosting platform and not a human-first file uploader. The first user is an agent runtime; the human user receives a clean link.
-
-## Homepage message
-
-Give every agent-made HTML file a clean share link.
-
-## Primary workflow
+## Primary Workflow
 
 ```text
 Agent finishes task
-  -> creates single-file HTML
-  -> calls POST /api/v1/artifacts
-  -> receives shareUrl
-  -> returns shareUrl to the user
+  -> creates a single HTML string
+  -> calls POST /v1/publish with Bearer token
+  -> Worker writes metadata to D1 and content to private R2
+  -> Worker returns /v/:id
+  -> human opens viewer page
 ```
 
-## Product surfaces
+## MVP Scope
 
-- Marketing site: explains the last-mile problem.
-- Agent docs: shows exact API call and response.
-- Console: audit, revoke, inspect source metadata.
-- Skill contract: lets agent platforms install a publishing behavior.
-- Runtime shell: human-facing trusted page around untrusted HTML.
+- Cloudflare Workers only, no traditional server.
+- R2 bucket is private; all access goes through the Worker.
+- D1 stores agents and page metadata.
+- Public pages are served through `/raw/:id`.
+- Password pages are encrypted with AES-GCM before writing to R2.
+- Cron cleanup expires old pages every 15 minutes.
 
-## Differentiation
+## Defaults
 
-Vercel, Netlify, and Cloudflare Pages are optimized for code repositories, frameworks, deploy previews, and frontend teams. PagePort is narrower: publish one finished HTML artifact from an agent run without turning it into a repo or project.
-
-## MVP scope
-
-- Publish single-file HTML.
-- Return share URL.
-- Store artifact metadata.
-- Show artifact in sandboxed iframe.
-- Revoke artifact links.
-- Optional bearer token.
-- Console listing.
-- Skill contract.
-
-## Next product features
-
-- Password links.
-- Screenshot preview generation.
-- Content review queue.
-- Per-artifact subdomain.
-- Custom team domain.
-- Usage analytics.
-- SDKs for JavaScript, Python, and Codex skills.
+- HTML max size: 2 MB.
+- Default TTL: 7 days.
+- Minimum TTL: 5 minutes.
+- Maximum TTL: 30 days.
