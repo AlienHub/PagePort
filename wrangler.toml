@@ -1,0 +1,24 @@
+name = "agent-html-share"
+main = "src/index.ts"
+compatibility_date = "2025-09-06"
+
+[vars]
+PUBLIC_ORIGIN = ""
+MAX_HTML_BYTES = "2000000"
+DEFAULT_TTL_SECONDS = "604800"
+MIN_TTL_SECONDS = "300"
+MAX_TTL_SECONDS = "2592000"
+PBKDF2_ITERATIONS = "100000"
+
+[[r2_buckets]]
+binding = "PAGE_BUCKET"
+bucket_name = "agent-html-share-pages"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "agent-html-share"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[triggers]
+crons = ["*/15 * * * *"]
