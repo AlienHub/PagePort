@@ -6,6 +6,8 @@ Cloudflare-only MVP for publishing one agent-generated HTML string as a browser 
 
 Agents call `POST /v1/publish` with a bearer token. The Worker stores metadata in D1, stores page bytes in private R2, and returns `/v/:id`. Public pages load `/raw/:id` in a sandboxed iframe. Password pages are encrypted with AES-GCM before writing to R2 and unlock in the viewer with `POST /v/:id/unlock`.
 
+For multi-user instances, people can sign in with Google or GitHub, then create their own agent tokens from the PagePort dashboard. OAuth identifies the user; the agent token remains the publish credential.
+
 ## Stack
 
 - Cloudflare Workers
@@ -28,8 +30,24 @@ Create a local agent token record:
 TOKEN="dev-agent-token"
 TOKEN_HASH=$(node -e "const crypto = require('node:crypto'); console.log(crypto.createHash('sha256').update(process.argv[1]).digest('hex'))" "$TOKEN")
 npx wrangler d1 execute agent-html-share --local --file migrations/0001_init.sql
+npx wrangler d1 execute agent-html-share --local --file migrations/0002_user_auth.sql
 npx wrangler d1 execute agent-html-share --local --command "INSERT INTO agents (id, name, token_hash, status, created_at) VALUES ('agent_dev', 'Local Dev Agent', '$TOKEN_HASH', 'active', datetime('now'))"
 ```
+
+To test the browser login flow locally, create OAuth apps with these callback URLs:
+
+```text
+http://127.0.0.1:8787/auth/google/callback
+http://127.0.0.1:8787/auth/github/callback
+```
+
+Then copy the local Worker secrets template and fill in the OAuth app values:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+Wrangler reads `.dev.vars` during `wrangler dev`. Keep the callback URLs exactly aligned with the origin you use in the browser.
 
 ## One-Click Deploy
 
@@ -49,6 +67,8 @@ PAGEPORT_AGENT_TOKEN=copy-the-token-once
 ```
 
 The bootstrap endpoint is disabled after the first agent exists.
+
+For shared hosted instances, configure Google/GitHub OAuth and send users to `/dashboard`. They can sign in and create user-owned agent tokens without seeing any platform credentials.
 
 For local agents, you can also store the publish credentials outside the project in `~/.pageport/config.yaml`:
 
@@ -93,6 +113,10 @@ npx wrangler d1 execute agent-html-share --remote --command "INSERT INTO agents 
 Configured in `wrangler.toml`:
 
 - `PUBLIC_ORIGIN`: optional public Worker origin used in API responses. Leave empty to use the request origin.
+- `GOOGLE_CLIENT_ID`: Google OAuth client ID for dashboard login.
+- `GITHUB_CLIENT_ID`: GitHub OAuth client ID for dashboard login.
+- `SESSION_COOKIE_NAME`: defaults to `pageport_session`.
+- `SESSION_TTL_SECONDS`: defaults to `2592000` (30 days).
 - `MAX_HTML_BYTES`: default `2000000`.
 - `DEFAULT_TTL_SECONDS`: default `604800` (7 days).
 - `MIN_TTL_SECONDS`: default `300` (5 minutes).
@@ -103,6 +127,13 @@ Bindings:
 
 - `PAGE_BUCKET`: private R2 bucket.
 - `DB`: D1 database.
+
+Secrets:
+
+- `GOOGLE_CLIENT_SECRET`: Google OAuth client secret.
+- `GITHUB_CLIENT_SECRET`: GitHub OAuth client secret.
+
+For local development, put OAuth client IDs and secrets in `.dev.vars`. For deployed Workers, set client IDs in `wrangler.toml` or Cloudflare dashboard variables, and set secrets with `wrangler secret put`.
 
 ## API Examples
 
@@ -149,10 +180,28 @@ curl -X DELETE http://127.0.0.1:8787/v1/pages/REPLACE_ID \
   -H "authorization: Bearer dev-agent-token"
 ```
 
+Create an agent token from a logged-in browser session:
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/agents \
+  -H "content-type: application/json" \
+  -H "cookie: pageport_session=..." \
+  -d '{ "name": "My Agent" }'
+```
+
 ## Routes
 
 - `GET /v1/bootstrap/status`: reports whether first-agent bootstrap is available.
 - `POST /v1/bootstrap/agent`: creates the first agent token only when no agents exist.
+- `GET /auth/google/start`: starts Google login.
+- `GET /auth/google/callback`: handles Google OAuth callback.
+- `GET /auth/github/start`: starts GitHub login.
+- `GET /auth/github/callback`: handles GitHub OAuth callback.
+- `POST /auth/logout`: revokes the current browser session.
+- `GET /v1/me`: returns the logged-in user and connected identities.
+- `GET /v1/agents`: lists the logged-in user's agent tokens.
+- `POST /v1/agents`: creates a logged-in user's agent token and shows it once.
+- `DELETE /v1/agents/:id`: disables a logged-in user's agent token.
 - `POST /v1/publish`: authenticated publish endpoint.
 - `GET /v/:id`: viewer page.
 - `GET /raw/:id`: public HTML only.
@@ -165,6 +214,10 @@ Expired pages return `410`. Cron runs every 15 minutes, deletes expired R2 objec
 
 - R2 bucket is private; no direct bucket URLs are required.
 - Agent tokens are stored as SHA-256 hashes in D1.
+- Browser sessions are opaque random tokens stored as SHA-256 hashes in D1.
+- OAuth state is one-time use and expires after 10 minutes.
+- Google login verifies the ID token issuer, audience, nonce, expiry, and signature.
+- GitHub login stores only profile identity data; the GitHub access token is not persisted.
 - Passwords are never stored.
 - Password-protected HTML is encrypted with AES-GCM before R2 writes.
 - PBKDF2-HMAC-SHA-256 derives per-page AES keys from per-page salts.

@@ -11,7 +11,7 @@ export async function requireAgent(c: Context<AppBindings>, next: Next): Promise
 
   const tokenHash = await sha256Hex(match[1]);
   const agent = await c.env.DB.prepare(
-    "SELECT id, name, token_hash, status, created_at, last_used_at FROM agents WHERE token_hash = ? LIMIT 1"
+    "SELECT id, user_id, name, token_hash, status, created_at, last_used_at FROM agents WHERE token_hash = ? LIMIT 1"
   ).bind(tokenHash).first<Agent>();
 
   if (!agent || agent.status !== "active") return errorJson(c, 401, "Invalid bearer token");

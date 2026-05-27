@@ -14,6 +14,11 @@ export async function sha256Hex(value: string | Uint8Array): Promise<string> {
   return bytesToHex(new Uint8Array(digest));
 }
 
+export async function sha256Base64Url(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return bytesToBase64Url(new Uint8Array(digest));
+}
+
 export async function encryptHtml(html: string, password: string, iterations: number): Promise<EncryptionResult> {
   const salt = randomBytes(16);
   const iv = randomBytes(12);
@@ -53,6 +58,23 @@ export function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   }
   return btoa(binary);
+}
+
+export function bytesToBase64Url(bytes: Uint8Array): string {
+  return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+export function base64UrlToBytes(value: string): Uint8Array {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return base64ToBytes(padded);
+}
+
+export function base64UrlToJson<T>(value: string): T | null {
+  try {
+    return JSON.parse(decoder.decode(base64UrlToBytes(value))) as T;
+  } catch {
+    return null;
+  }
 }
 
 function base64ToBytes(value: string): Uint8Array {

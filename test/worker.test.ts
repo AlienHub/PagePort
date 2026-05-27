@@ -1,15 +1,70 @@
-import { env, SELF } from "cloudflare:test";
-import { beforeEach, describe, expect, test } from "vitest";
+import { env, fetchMock, SELF } from "cloudflare:test";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { cleanupExpiredPages } from "../src/handlers/cleanup";
 
 const TOKEN = "dev-agent-token";
 
 beforeEach(async () => {
+  fetchMock.activate();
+  fetchMock.enableNetConnect();
+
   await env.DB.prepare("DROP TABLE IF EXISTS pages").run();
   await env.DB.prepare("DROP TABLE IF EXISTS agents").run();
+  await env.DB.prepare("DROP TABLE IF EXISTS sessions").run();
+  await env.DB.prepare("DROP TABLE IF EXISTS oauth_states").run();
+  await env.DB.prepare("DROP TABLE IF EXISTS user_identities").run();
+  await env.DB.prepare("DROP TABLE IF EXISTS users").run();
+  await env.DB.prepare(`
+    CREATE TABLE users (
+      id TEXT PRIMARY KEY,
+      primary_email TEXT NOT NULL,
+      display_name TEXT,
+      avatar_url TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+      created_at TEXT NOT NULL,
+      last_login_at TEXT
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE user_identities (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL CHECK (provider IN ('google', 'github')),
+      provider_user_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      email_verified INTEGER NOT NULL DEFAULT 0 CHECK (email_verified IN (0, 1)),
+      username TEXT,
+      avatar_url TEXT,
+      created_at TEXT NOT NULL,
+      last_login_at TEXT
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      session_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_seen_at TEXT,
+      revoked_at TEXT
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE oauth_states (
+      state_hash TEXT PRIMARY KEY,
+      provider TEXT NOT NULL CHECK (provider IN ('google', 'github')),
+      code_verifier TEXT,
+      nonce TEXT,
+      next_path TEXT,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `).run();
   await env.DB.prepare(`
     CREATE TABLE agents (
       id TEXT PRIMARY KEY,
+      user_id TEXT,
       name TEXT NOT NULL,
       token_hash TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
@@ -42,6 +97,10 @@ beforeEach(async () => {
   await env.DB.prepare(
     "INSERT INTO agents (id, name, token_hash, status, created_at) VALUES (?, ?, ?, 'active', ?)"
   ).bind("agent_test", "Test Agent", await sha256Hex(TOKEN), new Date().toISOString()).run();
+});
+
+afterEach(() => {
+  fetchMock.assertNoPendingInterceptors();
 });
 
 describe("Agent HTML Share Worker", () => {
@@ -104,6 +163,214 @@ describe("Agent HTML Share Worker", () => {
     expect(html).toContain("Create first agent token");
     expect(html).toContain("/v1/publish");
     expect(html).toContain("PAGEPORT_AGENT_TOKEN");
+  });
+
+  test("renders dashboard with agent setup copy", async () => {
+    const response = await SELF.fetch("http://example.com/dashboard");
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("give the setup prompt to your Agent");
+    expect(html).toContain("Copy Agent Setup");
+    expect(html).toContain("PagePort Agent Setup");
+    expect(html).toContain("PAGEPORT_ENDPOINT=");
+    expect(html).toContain("PAGEPORT_AGENT_TOKEN=");
+  });
+
+  test("completes GitHub OAuth login and creates a browser session", async () => {
+    fetchMock.disableNetConnect();
+
+    const started = await SELF.fetch("http://example.com/auth/github/start?next=/dashboard", {
+      redirect: "manual"
+    });
+    expect(started.status).toBe(302);
+    const authorizeUrl = new URL(started.headers.get("location") ?? "");
+    expect(authorizeUrl.origin).toBe("https://github.com");
+    expect(authorizeUrl.pathname).toBe("/login/oauth/authorize");
+    expect(authorizeUrl.searchParams.get("client_id")).toBe("github-client");
+    expect(authorizeUrl.searchParams.get("redirect_uri")).toBe("http://example.com/auth/github/callback");
+    expect(authorizeUrl.searchParams.get("scope")).toBe("read:user user:email");
+    const state = authorizeUrl.searchParams.get("state");
+    expect(state).toMatch(/^[a-f0-9]{64}$/);
+
+    fetchMock.get("https://github.com").intercept({
+      path: "/login/oauth/access_token",
+      method: "POST",
+      body: body => body.includes("code=github-code") && body.includes("client_id=github-client")
+    }).reply(200, { access_token: "github-access-token" }, { headers: { "content-type": "application/json" } });
+    fetchMock.get("https://api.github.com").intercept({
+      path: "/user",
+      method: "GET"
+    }).reply(200, {
+      id: 12345,
+      login: "octocat",
+      name: "Mona Lisa",
+      avatar_url: "https://example.com/octocat.png"
+    }, { headers: { "content-type": "application/json" } });
+    fetchMock.get("https://api.github.com").intercept({
+      path: "/user/emails",
+      method: "GET"
+    }).reply(200, [
+      { email: "unverified@example.com", primary: true, verified: false },
+      { email: "mona@example.com", primary: false, verified: true }
+    ], { headers: { "content-type": "application/json" } });
+
+    const callback = await SELF.fetch(`http://example.com/auth/github/callback?code=github-code&state=${state}`, {
+      redirect: "manual"
+    });
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location")).toBe("/dashboard");
+    const cookie = callback.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain("pageport_session=");
+    expect(cookie).toContain("HttpOnly");
+
+    const me = await SELF.fetch("http://example.com/v1/me", {
+      headers: { cookie: cookie.split(";")[0] }
+    });
+    expect(me.status).toBe(200);
+    const profile = await me.json() as {
+      user: { primary_email: string; display_name: string };
+      identities: Array<{ provider: string; email: string; email_verified: number; username: string }>;
+    };
+    expect(profile.user).toMatchObject({
+      primary_email: "mona@example.com",
+      display_name: "Mona Lisa"
+    });
+    expect(profile.identities).toContainEqual(expect.objectContaining({
+      provider: "github",
+      email: "mona@example.com",
+      email_verified: 1,
+      username: "octocat"
+    }));
+  });
+
+  test("completes Google OAuth login with a verified id token", async () => {
+    fetchMock.disableNetConnect();
+
+    const started = await SELF.fetch("http://example.com/auth/google/start?next=/dashboard", {
+      redirect: "manual"
+    });
+    expect(started.status).toBe(302);
+    const authorizeUrl = new URL(started.headers.get("location") ?? "");
+    expect(authorizeUrl.origin).toBe("https://accounts.google.com");
+    expect(authorizeUrl.pathname).toBe("/o/oauth2/v2/auth");
+    expect(authorizeUrl.searchParams.get("client_id")).toBe("google-client");
+    expect(authorizeUrl.searchParams.get("scope")).toBe("openid email profile");
+    expect(authorizeUrl.searchParams.get("code_challenge_method")).toBe("S256");
+    const state = authorizeUrl.searchParams.get("state") ?? "";
+
+    const stateRow = await env.DB.prepare(
+      "SELECT nonce, code_verifier FROM oauth_states WHERE state_hash = ?"
+    ).bind(await sha256Hex(state)).first<{ nonce: string; code_verifier: string }>();
+    expect(stateRow?.nonce).toBeTruthy();
+    expect(stateRow?.code_verifier).toBeTruthy();
+
+    const { idToken, publicJwk } = await createGoogleIdToken(stateRow?.nonce ?? "");
+    fetchMock.get("https://oauth2.googleapis.com").intercept({
+      path: "/token",
+      method: "POST",
+      body: body => body.includes("code=google-code") && body.includes(`code_verifier=${stateRow?.code_verifier}`)
+    }).reply(200, { id_token: idToken }, { headers: { "content-type": "application/json" } });
+    fetchMock.get("https://www.googleapis.com").intercept({
+      path: "/oauth2/v3/certs",
+      method: "GET"
+    }).reply(200, { keys: [publicJwk] }, { headers: { "content-type": "application/json" } });
+
+    const callback = await SELF.fetch(`http://example.com/auth/google/callback?code=google-code&state=${state}`, {
+      redirect: "manual"
+    });
+    expect(callback.status).toBe(302);
+    const cookie = callback.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain("pageport_session=");
+
+    const me = await SELF.fetch("http://example.com/v1/me", {
+      headers: { cookie: cookie.split(";")[0] }
+    });
+    expect(me.status).toBe(200);
+    const profile = await me.json() as {
+      user: { primary_email: string; display_name: string; avatar_url: string };
+      identities: Array<{ provider: string; email: string; email_verified: number }>;
+    };
+    expect(profile.user).toMatchObject({
+      primary_email: "google-person@example.com",
+      display_name: "Google Person",
+      avatar_url: "https://example.com/google-person.png"
+    });
+    expect(profile.identities).toContainEqual(expect.objectContaining({
+      provider: "google",
+      email: "google-person@example.com",
+      email_verified: 1
+    }));
+  });
+
+  test("rejects OAuth provider errors and invalid states", async () => {
+    const providerError = await SELF.fetch("http://example.com/auth/google/callback?error=access_denied");
+    expect(providerError.status).toBe(401);
+    expect(await providerError.json()).toMatchObject({
+      error: "OAuth provider rejected login: access_denied"
+    });
+
+    const invalidState = await SELF.fetch("http://example.com/auth/github/callback?code=code&state=missing");
+    expect(invalidState.status).toBe(401);
+    expect(await invalidState.json()).toMatchObject({ error: "Invalid OAuth state" });
+  });
+
+  test("creates and revokes a user-owned agent token from a session", async () => {
+    const sessionToken = "session-token";
+    await createUserSession(sessionToken);
+
+    const unauthorized = await SELF.fetch("http://example.com/v1/agents");
+    expect(unauthorized.status).toBe(401);
+
+    const created = await SELF.fetch("http://example.com/v1/agents", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "cookie": `pageport_session=${sessionToken}`
+      },
+      body: JSON.stringify({ name: "Browser Agent" })
+    });
+    expect(created.status).toBe(201);
+    const agent = await created.json() as { id: string; name: string; token: string; warning: string };
+    expect(agent.id).toMatch(/^agent_/);
+    expect(agent.name).toBe("Browser Agent");
+    expect(agent.token).toMatch(/^[a-f0-9]{64}$/);
+    expect(agent.warning).toContain("shown only once");
+
+    const listed = await SELF.fetch("http://example.com/v1/agents", {
+      headers: { "cookie": `pageport_session=${sessionToken}` }
+    });
+    expect(listed.status).toBe(200);
+    const list = await listed.json() as { agents: Array<{ id: string; name: string; status: string }> };
+    expect(list.agents).toContainEqual(expect.objectContaining({
+      id: agent.id,
+      name: "Browser Agent",
+      status: "active"
+    }));
+
+    const published = await publish({
+      title: "User agent page",
+      html: "<!doctype html><html><body><h1>User Agent</h1></body></html>"
+    }, agent.token);
+    expect(published.mode).toBe("public");
+
+    const revoked = await SELF.fetch(`http://example.com/v1/agents/${agent.id}`, {
+      method: "DELETE",
+      headers: { "cookie": `pageport_session=${sessionToken}` }
+    });
+    expect(revoked.status).toBe(200);
+
+    const rejected = await SELF.fetch("http://example.com/v1/publish", {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${agent.token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        title: "Revoked",
+        html: "<!doctype html><html><body>no</body></html>"
+      })
+    });
+    expect(rejected.status).toBe(401);
   });
 
   test("publishes public HTML and serves it through viewer/raw", async () => {
@@ -223,4 +490,76 @@ function unlock(id: string, password: string): Promise<Response> {
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function createGoogleIdToken(nonce: string): Promise<{ idToken: string; publicJwk: JsonWebKey }> {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256"
+    },
+    true,
+    ["sign", "verify"]
+  ) as CryptoKeyPair;
+  const kid = "google-test-key";
+  const publicJwk = {
+    ...await crypto.subtle.exportKey("jwk", keyPair.publicKey) as JsonWebKey,
+    kid,
+    alg: "RS256",
+    use: "sig"
+  } as JsonWebKey;
+
+  const header = base64UrlJson({ alg: "RS256", kid, typ: "JWT" });
+  const payload = base64UrlJson({
+    iss: "https://accounts.google.com",
+    aud: "google-client",
+    exp: Math.floor(Date.now() / 1000) + 600,
+    nonce,
+    sub: "google-subject",
+    email: "google-person@example.com",
+    email_verified: true,
+    name: "Google Person",
+    picture: "https://example.com/google-person.png"
+  });
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    keyPair.privateKey,
+    new TextEncoder().encode(`${header}.${payload}`)
+  );
+
+  return {
+    idToken: `${header}.${payload}.${base64UrlBytes(new Uint8Array(signature))}`,
+    publicJwk
+  };
+}
+
+function base64UrlJson(value: Record<string, unknown>): string {
+  return base64UrlBytes(new TextEncoder().encode(JSON.stringify(value)));
+}
+
+function base64UrlBytes(bytes: Uint8Array): string {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function createUserSession(sessionToken: string) {
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO users (id, primary_email, display_name, avatar_url, status, created_at, last_login_at)
+     VALUES ('usr_test', 'person@example.com', 'Person Example', NULL, 'active', ?, ?)`
+  ).bind(now, now).run();
+  await env.DB.prepare(
+    `INSERT INTO sessions (id, user_id, session_hash, expires_at, created_at, last_seen_at, revoked_at)
+     VALUES ('sess_test', 'usr_test', ?, ?, ?, ?, NULL)`
+  ).bind(
+    await sha256Hex(sessionToken),
+    new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    now,
+    now
+  ).run();
 }
