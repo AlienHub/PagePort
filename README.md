@@ -50,6 +50,21 @@ PAGEPORT_AGENT_TOKEN=copy-the-token-once
 
 The bootstrap endpoint is disabled after the first agent exists.
 
+For local agents, you can also store the publish credentials outside the project in `~/.pageport/config.yaml`:
+
+```bash
+mkdir -p ~/.pageport
+chmod 700 ~/.pageport
+cat > ~/.pageport/config.yaml <<'EOF'
+endpoint: https://your-worker.example/v1/publish
+agent_token: copy-the-token-once
+default_ttl_seconds: 604800
+EOF
+chmod 600 ~/.pageport/config.yaml
+```
+
+Environment variables still take priority over this file, which keeps CI and temporary agent runs easy to configure. Avoid storing page view passwords in this file; use `PAGEPORT_PASSWORD` only for the specific publish that needs it.
+
 ## Manual Deploy
 
 Create Cloudflare resources:

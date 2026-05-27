@@ -22,9 +22,20 @@ Use these variables when available:
 - `PAGEPORT_ENDPOINT`: full publish endpoint, for example `https://share.example.com/v1/publish`.
 - `PAGEPORT_ORIGIN`: service origin; use `${PAGEPORT_ORIGIN}/v1/publish` when `PAGEPORT_ENDPOINT` is not set.
 - `PAGEPORT_AGENT_TOKEN`: bearer token used in `Authorization: Bearer ...`.
+- `PAGEPORT_CONFIG`: optional path to a config file. Defaults to `~/.pageport/config.yaml`.
 - Optional: `PAGEPORT_PASSWORD`, `PAGEPORT_TTL_SECONDS`.
 
-If the endpoint or token is missing, tell the user which variable is missing. Do not invent a token.
+Environment variables take priority. If `PAGEPORT_ENDPOINT`/`PAGEPORT_ORIGIN` or `PAGEPORT_AGENT_TOKEN` are missing, the helper script falls back to `~/.pageport/config.yaml`:
+
+```yaml
+endpoint: https://share.example.com/v1/publish
+agent_token: pp_xxxxxxxxxxxxxxxxx
+default_ttl_seconds: 604800
+```
+
+The config file may also use `origin` instead of `endpoint`, and `ttl_seconds` instead of `default_ttl_seconds`. Keep this file outside project repos, ideally with directory mode `700` and file mode `600`. Do not store page view passwords there; use `PAGEPORT_PASSWORD` only for the current publish.
+
+If the endpoint or token is missing after checking environment variables and config, tell the user which value is missing. Do not invent a token.
 
 ## Recommended Workflow
 
