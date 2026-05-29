@@ -157,12 +157,29 @@ describe("Agent HTML Share Worker", () => {
     const response = await SELF.fetch("http://example.com/");
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("Agent HTML Share");
+    expect(html).toContain("<title>PagePort</title>");
+    expect(html).toContain("<html lang=\"en\">");
+    expect(html).toContain("Share Agent pages with one link.");
+    expect(html).toContain("Agent 页面，一键交付给用户。");
+    expect(html).toContain("Turn Agent output into a page people can open");
     expect(html).toContain("Deploy to Cloudflare");
     expect(html).toContain("https://deploy.workers.cloudflare.com/?url=");
     expect(html).toContain("Create first agent token");
-    expect(html).toContain("/v1/publish");
+    expect(html).toContain("Copy one prompt. Let the Agent publish.");
+    expect(html).toContain("复制一段配置，Agent 就能发布。");
     expect(html).toContain("PAGEPORT_AGENT_TOKEN");
+    expect(html).toContain("data-testid=\"home-nav\"");
+    expect(html).toContain("data-testid=\"home-language-switch\"");
+    expect(html).toContain("data-testid=\"home-main\"");
+    expect(html).toContain("data-testid=\"home-trust-metrics\"");
+    expect(html).toContain("data-testid=\"home-edge-flow\"");
+    expect(html).toContain("data-testid=\"flow-worker\"");
+    expect(html).toContain("data-i18n=\"home.hero.title\"");
+    expect(html).toContain("Agent-friendly");
+    expect(html).toContain("--brand: #F6821F");
+    expect(html).toContain("--bg-light: #FFFFFF");
+    expect(html).toContain("--border-light: #E5E7EB");
+    expect(html).not.toContain("box-shadow:");
   });
 
   test("renders dashboard with agent setup copy", async () => {
@@ -170,10 +187,19 @@ describe("Agent HTML Share Worker", () => {
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain("give the setup prompt to your Agent");
+    expect(html).toContain("登录后创建限定作用域的 Agent token");
     expect(html).toContain("Copy Agent Setup");
     expect(html).toContain("PagePort Agent Setup");
+    expect(html).toContain("PagePort Agent 配置");
     expect(html).toContain("PAGEPORT_ENDPOINT=");
     expect(html).toContain("PAGEPORT_AGENT_TOKEN=");
+    expect(html).toContain("data-testid=\"dashboard-sidebar\"");
+    expect(html).toContain("data-testid=\"dashboard-language-switch\"");
+    expect(html).toContain("data-testid=\"agent-setup-output\"");
+    expect(html).toContain("data-i18n=\"dashboard.title\"");
+    expect(html).toContain("agent-token-revoke-button");
+    expect(html).toContain("--border-light: #E5E7EB");
+    expect(html).not.toContain("box-shadow:");
   });
 
   test("completes GitHub OAuth login and creates a browser session", async () => {
@@ -386,7 +412,12 @@ describe("Agent HTML Share Worker", () => {
 
     const viewer = await SELF.fetch(`http://example.com/v/${published.id}`);
     expect(viewer.status).toBe(200);
-    expect(await viewer.text()).toContain(`<iframe src="/raw/${published.id}"`);
+    const viewerHtml = await viewer.text();
+    expect(viewerHtml).toContain(`data-testid="viewer-public-frame" src="/raw/${published.id}"`);
+    expect(viewerHtml).toContain("data-testid=\"viewer-sidebar\"");
+    expect(viewerHtml).toContain("data-testid=\"viewer-main\"");
+    expect(viewerHtml).toContain("--border-light: #E5E7EB");
+    expect(viewerHtml).not.toContain("box-shadow:");
 
     const raw = await SELF.fetch(`http://example.com/raw/${published.id}`);
     expect(raw.status).toBe(200);
@@ -407,7 +438,11 @@ describe("Agent HTML Share Worker", () => {
 
     const viewer = await SELF.fetch(`http://example.com/v/${published.id}`);
     expect(viewer.status).toBe(200);
-    expect(await viewer.text()).toContain("Password");
+    const viewerHtml = await viewer.text();
+    expect(viewerHtml).toContain("Password");
+    expect(viewerHtml).toContain("data-i18n=\"viewer.password\"");
+    expect(viewerHtml).toContain("密码不正确。");
+    expect(viewerHtml).toContain("data-testid=\"viewer-unlock-form\"");
 
     const wrong = await unlock(published.id, "wrong");
     expect(wrong.status).toBe(401);
