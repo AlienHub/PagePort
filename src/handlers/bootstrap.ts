@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { sha256Hex } from "../lib/crypto";
+import { publicOrigin, publishEndpoint } from "../lib/origin";
 import { errorJson } from "../lib/responses";
 import { nowIso } from "../lib/time";
 import type { AppBindings } from "../lib/types";
@@ -38,12 +39,12 @@ export async function bootstrapAgentHandler(c: Context<AppBindings>) {
     return bootstrapDisabled(c);
   }
 
-  const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin;
+  const origin = publicOrigin(c.env, c.req.url);
   return c.json({
     id: FIRST_AGENT_ID,
     name: FIRST_AGENT_NAME,
     token,
-    endpoint: `${origin}/v1/publish`,
+    endpoint: publishEndpoint(origin),
     warning: "Copy this token now. It is shown only once."
   }, 201);
 }

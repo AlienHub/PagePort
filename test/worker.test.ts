@@ -1,6 +1,7 @@
 import { env, fetchMock, SELF } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { cleanupExpiredPages } from "../src/handlers/cleanup";
+import { publicOrigin, publishEndpoint } from "../src/lib/origin";
 
 const TOKEN = "dev-agent-token";
 
@@ -104,6 +105,16 @@ afterEach(() => {
 });
 
 describe("Agent HTML Share Worker", () => {
+  test("normalizes configured public origins for custom domain links", () => {
+    expect(publicOrigin({ PUBLIC_ORIGIN: "share.example.com" }, "https://worker-name.workers.dev/v1/publish"))
+      .toBe("https://share.example.com");
+    expect(publicOrigin({ PUBLIC_ORIGIN: "https://share.example.com/" }, "https://worker-name.workers.dev/v1/publish"))
+      .toBe("https://share.example.com");
+    expect(publicOrigin({ PUBLIC_ORIGIN: "" }, "https://worker-name.workers.dev/v1/publish"))
+      .toBe("https://worker-name.workers.dev");
+    expect(publishEndpoint("https://share.example.com")).toBe("https://share.example.com/v1/publish");
+  });
+
   test("bootstraps the first agent token once and allows publishing with it", async () => {
     await env.DB.prepare("DELETE FROM agents").run();
 
@@ -192,6 +203,7 @@ describe("Agent HTML Share Worker", () => {
     expect(html).toContain("PagePort Agent Setup");
     expect(html).toContain("PagePort Agent 配置");
     expect(html).toContain("PAGEPORT_ENDPOINT=");
+    expect(html).toContain("const pageportEndpoint = \"http://example.com/v1/publish\"");
     expect(html).toContain("PAGEPORT_AGENT_TOKEN=");
     expect(html).toContain("data-testid=\"dashboard-sidebar\"");
     expect(html).toContain("data-testid=\"dashboard-language-switch\"");

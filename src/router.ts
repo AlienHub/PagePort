@@ -11,6 +11,7 @@ import { publishHandler } from "./handlers/publish";
 import { rawHandler } from "./handlers/raw";
 import { unlockHandler } from "./handlers/unlock";
 import { viewHandler } from "./handlers/view";
+import { publicOrigin } from "./lib/origin";
 import { renderHome } from "./viewer/homeHtml";
 
 export const app = new Hono<AppBindings>();
@@ -21,8 +22,7 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/", c => {
-  const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin;
-  return c.html(renderHome(origin));
+  return c.html(renderHome(publicOrigin(c.env, c.req.url)));
 });
 app.get("/dashboard", dashboardHandler);
 app.get("/healthz", c => c.json({ ok: true }));

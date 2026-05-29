@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { configuredIterations, encryptHtml, sha256Hex } from "../lib/crypto";
 import { htmlSizeBytes, maxHtmlBytes, normalizeHtml, normalizeTitle } from "../lib/html";
 import { makePageId, objectKeyForPage } from "../lib/ids";
+import { publicOrigin } from "../lib/origin";
 import { errorJson } from "../lib/responses";
 import { addSecondsIso, normalizeExpiration, nowIso, ttlConfig } from "../lib/time";
 import type { AppBindings } from "../lib/types";
@@ -84,7 +85,7 @@ export async function publishHandler(c: Context<AppBindings>) {
     metadataJson
   ).run();
 
-  const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin;
+  const origin = publicOrigin(c.env, c.req.url);
   return c.json({
     id,
     url: `${origin}/v/${id}`,

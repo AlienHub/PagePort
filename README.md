@@ -112,7 +112,7 @@ npx wrangler d1 execute agent-html-share --remote --command "INSERT INTO agents 
 
 Configured in `wrangler.toml`:
 
-- `PUBLIC_ORIGIN`: optional public Worker origin used in API responses. Leave empty to use the request origin.
+- `PUBLIC_ORIGIN`: optional public Worker origin used in API responses, OAuth callbacks, bootstrap output, homepage prompts, and dashboard-generated agent setup. Set this to your custom domain, for example `https://share.example.com`. A bare host like `share.example.com` is also accepted and normalized to HTTPS. Leave empty to use the request origin.
 - `GOOGLE_CLIENT_ID`: Google OAuth client ID for dashboard login.
 - `GITHUB_CLIENT_ID`: GitHub OAuth client ID for dashboard login.
 - `SESSION_COOKIE_NAME`: defaults to `pageport_session`.
@@ -133,7 +133,9 @@ Secrets:
 - `GOOGLE_CLIENT_SECRET`: Google OAuth client secret.
 - `GITHUB_CLIENT_SECRET`: GitHub OAuth client secret.
 
-For local development, put OAuth client IDs and secrets in `.dev.vars`. For deployed Workers, set client IDs in `wrangler.toml` or Cloudflare dashboard variables, and set secrets with `wrangler secret put`.
+For local development, put OAuth client IDs and secrets in `.dev.vars`. For deployed Workers, set client IDs and `PUBLIC_ORIGIN` in `wrangler.toml` or Cloudflare dashboard variables, and set secrets with `wrangler secret put`.
+
+When using a Cloudflare custom domain, set `PUBLIC_ORIGIN` to that domain. Otherwise calls made through `*.workers.dev` will return `*.workers.dev` links because the Worker only sees the request host.
 
 ## API Examples
 

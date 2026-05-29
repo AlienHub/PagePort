@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { createOAuthStart, consumeOAuthState, fetchProviderProfile, isAuthProvider, providerConfigured, safeNextPath, upsertUserFromProfile } from "../lib/oauth";
+import { publicOrigin, publishEndpoint } from "../lib/origin";
 import { errorJson, textHtmlResponse } from "../lib/responses";
 import { createSession, revokeCurrentSession } from "../lib/session";
 import type { AppBindings } from "../lib/types";
@@ -9,7 +10,7 @@ export async function authStartHandler(c: Context<AppBindings>) {
   if (!isAuthProvider(provider)) return errorJson(c, 404, "Unknown auth provider");
   if (!providerConfigured(c.env, provider)) return errorJson(c, 500, `${provider} OAuth is not configured`);
 
-  const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin;
+  const origin = publicOrigin(c.env, c.req.url);
   const nextPath = safeNextPath(new URL(c.req.url).searchParams.get("next"));
   const { url } = await createOAuthStart(c.env, origin, provider, nextPath);
   return c.redirect(url, 302);
@@ -31,7 +32,7 @@ export async function authCallbackHandler(c: Context<AppBindings>) {
   if (!state) return errorJson(c, 401, "Invalid OAuth state");
 
   try {
-    const origin = c.env.PUBLIC_ORIGIN || url.origin;
+    const origin = publicOrigin(c.env, url);
     const profile = await fetchProviderProfile(c.env, origin, provider, code, state);
     const userId = await upsertUserFromProfile(c.env, profile);
     await createSession(c, userId);
@@ -66,6 +67,7 @@ export async function meHandler(c: Context<AppBindings>) {
 }
 
 export async function dashboardHandler(c: Context<AppBindings>) {
+  const endpoint = publishEndpoint(publicOrigin(c.env, c.req.url));
   return textHtmlResponse(`<!doctype html>
 <html lang="en">
 <head>
@@ -346,6 +348,7 @@ export async function dashboardHandler(c: Context<AppBindings>) {
     const copyButton = document.querySelector("[data-copy]");
     const agents = document.querySelector("[data-agents]");
     const agentName = document.querySelector("[data-agent-name]");
+    const pageportEndpoint = ${JSON.stringify(endpoint)};
     let lastAgents = [];
 
     document.querySelectorAll("[data-lang-option]").forEach(button => {
@@ -413,7 +416,6 @@ export async function dashboardHandler(c: Context<AppBindings>) {
     }
 
     function agentSetupText(agent) {
-      const endpoint = window.location.origin + "/v1/publish";
       if (currentLang === "zh") {
         return [
           "PagePort Agent 配置",
@@ -421,7 +423,7 @@ export async function dashboardHandler(c: Context<AppBindings>) {
           "当用户要求你通过 PagePort 发布或分享 HTML artifact 时，使用下面的凭据。",
           "",
           "环境变量：",
-          "PAGEPORT_ENDPOINT=" + endpoint,
+          "PAGEPORT_ENDPOINT=" + pageportEndpoint,
           "PAGEPORT_AGENT_TOKEN=" + agent.token,
           "",
           "给 Agent 的执行规则：",
@@ -443,7 +445,7 @@ export async function dashboardHandler(c: Context<AppBindings>) {
           "PAGEPORT_AGENT_TOKEN 必须保密，不要写进生成的 HTML，也不要分享给第三方。",
           "",
           "curl 示例：",
-          "curl -X POST \\"" + endpoint + "\\" \\\\",
+          "curl -X POST \\"" + pageportEndpoint + "\\" \\\\",
           "  -H \\"authorization: Bearer " + agent.token + "\\" \\\\",
           "  -H \\"content-type: application/json\\" \\\\",
           "  -d '{\\"title\\":\\"Demo\\",\\"html\\":\\"<!doctype html><html><body><h1>Hello</h1></body></html>\\",\\"ttl_seconds\\":604800}'"
@@ -455,7 +457,7 @@ export async function dashboardHandler(c: Context<AppBindings>) {
         "Use these credentials when the user asks you to publish or share an HTML artifact through PagePort.",
         "",
         "Environment variables:",
-        "PAGEPORT_ENDPOINT=" + endpoint,
+        "PAGEPORT_ENDPOINT=" + pageportEndpoint,
         "PAGEPORT_AGENT_TOKEN=" + agent.token,
         "",
         "Agent instructions:",
@@ -477,7 +479,7 @@ export async function dashboardHandler(c: Context<AppBindings>) {
         "Keep PAGEPORT_AGENT_TOKEN private. Do not place it inside generated HTML or share it with third parties.",
         "",
         "curl example:",
-        "curl -X POST \\"" + endpoint + "\\" \\\\",
+        "curl -X POST \\"" + pageportEndpoint + "\\" \\\\",
         "  -H \\"authorization: Bearer " + agent.token + "\\" \\\\",
         "  -H \\"content-type: application/json\\" \\\\",
         "  -d '{\\"title\\":\\"Demo\\",\\"html\\":\\"<!doctype html><html><body><h1>Hello</h1></body></html>\\",\\"ttl_seconds\\":604800}'"
