@@ -11,7 +11,12 @@ const endpoint = process.env.PAGEPORT_ENDPOINT ||
   config.endpoint ||
   endpointFromOrigin(process.env.PAGEPORT_ORIGIN || config.origin);
 const token = process.env.PAGEPORT_AGENT_TOKEN || config.agent_token;
-const ttlSeconds = Number(process.env.PAGEPORT_TTL_SECONDS || config.ttl_seconds || config.default_ttl_seconds || 604800);
+const ttlSeconds = Number(firstConfigValue(
+  process.env.PAGEPORT_TTL_SECONDS,
+  config.ttl_seconds,
+  config.default_ttl_seconds,
+  604800
+));
 const password = process.env.PAGEPORT_PASSWORD;
 
 if (!htmlPath) {
@@ -30,7 +35,7 @@ if (!token) {
 }
 
 if (!Number.isInteger(ttlSeconds)) {
-  console.error("PAGEPORT_TTL_SECONDS must be an integer when provided.");
+  console.error("PAGEPORT_TTL_SECONDS must be an integer when provided. Use 0 for no expiry.");
   process.exit(2);
 }
 
@@ -108,6 +113,10 @@ function parseScalar(value) {
   }
 
   return trimmed.replace(/\s+#.*$/, "");
+}
+
+function firstConfigValue(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== "");
 }
 
 function endpointFromOrigin(origin) {

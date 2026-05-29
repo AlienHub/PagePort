@@ -3,6 +3,7 @@ import type { Page } from "../lib/types";
 
 export function renderViewer(page: Page): string {
   const isEncrypted = page.mode === "encrypted";
+  const expiresAt = page.expires_at ? new Date(page.expires_at).toLocaleString() : "never";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -102,7 +103,7 @@ export function renderViewer(page: Page): string {
     <div class="viewer-workspace">
       <header data-testid="viewer-topbar">
         <div class="title" data-testid="viewer-title">${escapeHtml(page.title)}</div>
-        <div class="meta" data-testid="viewer-expiry">expires_at=${escapeHtml(new Date(page.expires_at).toLocaleString())}</div>
+        <div class="meta" data-testid="viewer-expiry">expires_at=${escapeHtml(expiresAt)}</div>
       </header>
       <main data-testid="viewer-main">
         ${isEncrypted ? encryptedBody(page.id) : publicBody(page.id)}

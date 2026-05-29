@@ -12,7 +12,12 @@ const token = process.env.PAGEPORT_AGENT_TOKEN || config.agent_token;
 const htmlPath = process.argv[2] || new URL("./sample-artifact.html", import.meta.url);
 const title = process.argv[3] || "AI Weekly Brief";
 const password = process.env.PAGEPORT_PASSWORD;
-const ttlSeconds = Number(process.env.PAGEPORT_TTL_SECONDS || config.ttl_seconds || config.default_ttl_seconds || 604800);
+const ttlSeconds = Number(firstConfigValue(
+  process.env.PAGEPORT_TTL_SECONDS,
+  config.ttl_seconds,
+  config.default_ttl_seconds,
+  604800
+));
 
 if (!token) {
   console.error(`Set PAGEPORT_AGENT_TOKEN, or add agent_token to ${configPath}.`);
@@ -20,7 +25,7 @@ if (!token) {
 }
 
 if (!Number.isInteger(ttlSeconds)) {
-  console.error("PAGEPORT_TTL_SECONDS/default_ttl_seconds must be an integer when provided.");
+  console.error("PAGEPORT_TTL_SECONDS/default_ttl_seconds must be an integer when provided. Use 0 for no expiry.");
   process.exit(1);
 }
 
@@ -93,6 +98,10 @@ function parseScalar(value) {
   }
 
   return trimmed.replace(/\s+#.*$/, "");
+}
+
+function firstConfigValue(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== "");
 }
 
 function endpointFromOrigin(origin) {

@@ -32,3 +32,4 @@ Agent finishes task
 - Default TTL: 7 days.
 - Minimum TTL: 5 minutes.
 - Maximum TTL: 30 days.
+- No-expiry pages: set `ttl_seconds` to `0` or `never_expires` to `true`.

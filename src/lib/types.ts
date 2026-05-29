@@ -72,7 +72,7 @@ export type Page = {
   object_key: string;
   sha256: string;
   size_bytes: number;
-  expires_at: string;
+  expires_at: string | null;
   created_at: string;
   deleted_at: string | null;
   encryption_salt: string | null;

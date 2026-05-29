@@ -82,7 +82,7 @@ beforeEach(async () => {
       object_key TEXT NOT NULL UNIQUE,
       sha256 TEXT NOT NULL,
       size_bytes INTEGER NOT NULL,
-      expires_at TEXT NOT NULL,
+      expires_at TEXT,
       created_at TEXT NOT NULL,
       deleted_at TEXT,
       encryption_salt TEXT,
@@ -486,6 +486,38 @@ describe("Agent HTML Share Worker", () => {
       .first<{ status: string }>();
     expect(row?.status).toBe("expired");
   });
+
+  test("publishes never-expiring pages and keeps them out of cleanup", async () => {
+    const byZero = await publish({
+      title: "Permanent by zero",
+      html: "<!doctype html><html><body>forever</body></html>",
+      ttl_seconds: 0
+    });
+    const byFlag = await publish({
+      title: "Permanent by flag",
+      html: "<!doctype html><html><body>also forever</body></html>",
+      never_expires: true
+    });
+
+    expect(byZero.expires_at).toBeNull();
+    expect(byFlag.expires_at).toBeNull();
+
+    const stored = await env.DB.prepare("SELECT expires_at FROM pages WHERE id = ?")
+      .bind(byZero.id)
+      .first<{ expires_at: string | null }>();
+    expect(stored?.expires_at).toBeNull();
+
+    const viewer = await SELF.fetch(`http://example.com/v/${byZero.id}`);
+    expect(viewer.status).toBe(200);
+    expect(await viewer.text()).toContain("expires_at=never");
+
+    const cleanup = await cleanupExpiredPages(env);
+    expect(cleanup.expired).toBe(0);
+
+    const raw = await SELF.fetch(`http://example.com/raw/${byZero.id}`);
+    expect(raw.status).toBe(200);
+    expect(await raw.text()).toContain("forever");
+  });
 });
 
 async function publish(overrides: Record<string, unknown>, token = TOKEN) {
@@ -508,7 +540,7 @@ async function publish(overrides: Record<string, unknown>, token = TOKEN) {
     id: string;
     url: string;
     mode: "public" | "encrypted";
-    expires_at: string;
+    expires_at: string | null;
     size_bytes: number;
     sha256: string;
   }>;

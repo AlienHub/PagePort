@@ -5,7 +5,7 @@ export async function cleanupExpiredPages(env: Env): Promise<{ expired: number; 
   const now = nowIso();
   const pages = await env.DB.prepare(
     `SELECT id, object_key FROM pages
-     WHERE status = 'active' AND expires_at < ?
+     WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < ?
      LIMIT 100`
   ).bind(now).all<Pick<Page, "id" | "object_key">>();
 

@@ -12,7 +12,7 @@ Publish one completed HTML artifact to PagePort, a small service that accepts an
 - Publish only content the user intended to share. Do not publish secrets, credentials, private raw data, environment dumps, local paths containing sensitive names, or hidden chain-of-thought.
 - The artifact must be one HTML string. If given a fragment, PagePort will wrap it, but prefer a complete document with `<!doctype html>`, `<html>`, `<head>`, charset, viewport, and `<body>`.
 - Default max HTML size is 2,000,000 bytes. Check size before uploading when the artifact may be large.
-- `ttl_seconds` defaults to 604800 seconds (7 days). Unless the deployment is configured differently, valid values are 300 to 2592000 seconds.
+- `ttl_seconds` defaults to 604800 seconds (7 days). Unless the deployment is configured differently, valid values are 300 to 2592000 seconds. Use `ttl_seconds: 0` or `never_expires: true` only when the user explicitly wants a permanent URL.
 - Omit `password` for a public URL. Set `password` only when the user asked for password protection or the content is sensitive enough that sharing a public link would be inappropriate.
 
 ## Environment

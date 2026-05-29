@@ -120,7 +120,7 @@ Configured in `wrangler.toml`:
 - `MAX_HTML_BYTES`: default `2000000`.
 - `DEFAULT_TTL_SECONDS`: default `604800` (7 days).
 - `MIN_TTL_SECONDS`: default `300` (5 minutes).
-- `MAX_TTL_SECONDS`: default `2592000` (30 days).
+- `MAX_TTL_SECONDS`: default `2592000` (30 days). Publish with `ttl_seconds: 0` or `never_expires: true` for a page with no expiry.
 - `PBKDF2_ITERATIONS`: default `100000` (Cloudflare Workers' PBKDF2 limit).
 
 Bindings:
@@ -148,6 +148,19 @@ curl -X POST http://127.0.0.1:8787/v1/publish \
     "html": "<!doctype html><html><body><h1>Hello</h1></body></html>",
     "ttl_seconds": 604800,
     "metadata": { "agent": "codex" }
+  }'
+```
+
+Publish public HTML with no expiry:
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/publish \
+  -H "authorization: Bearer dev-agent-token" \
+  -H "content-type: application/json" \
+  -d '{
+    "title": "Permanent report",
+    "html": "<!doctype html><html><body><h1>Hello</h1></body></html>",
+    "never_expires": true
   }'
 ```
 
@@ -208,7 +221,7 @@ curl -X POST http://127.0.0.1:8787/v1/agents \
 - `POST /v/:id/unlock`: encrypted HTML unlock.
 - `DELETE /v1/pages/:id`: agent-owned delete.
 
-Expired pages return `410`. Cron runs every 15 minutes, deletes expired R2 objects, and updates D1 `pages.status` to `expired`.
+Expired pages return `410`. Cron runs every 15 minutes, deletes expired R2 objects, and updates D1 `pages.status` to `expired`. Pages published with no expiry are skipped by cleanup.
 
 ## Security Notes
 

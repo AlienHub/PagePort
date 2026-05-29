@@ -3,7 +3,7 @@ import { configuredIterations, encryptHtml, sha256Hex } from "../lib/crypto";
 import { htmlSizeBytes, maxHtmlBytes, normalizeHtml, normalizeTitle } from "../lib/html";
 import { makePageId, objectKeyForPage } from "../lib/ids";
 import { errorJson } from "../lib/responses";
-import { addSecondsIso, normalizeTtlSeconds, nowIso, ttlConfig } from "../lib/time";
+import { addSecondsIso, normalizeExpiration, nowIso, ttlConfig } from "../lib/time";
 import type { AppBindings } from "../lib/types";
 import { normalizeMetadata, normalizePassword, readPublishPayload } from "../lib/validation";
 
@@ -21,10 +21,10 @@ export async function publishHandler(c: Context<AppBindings>) {
   const html = normalizeHtml(payload.html, htmlLimit);
   if (!html) return errorJson(c, 400, `html is required and must be at most ${htmlLimit} bytes`);
 
-  const ttlSeconds = normalizeTtlSeconds(payload.ttl_seconds, c.env);
-  if (!ttlSeconds) {
+  const expiration = normalizeExpiration(payload.ttl_seconds, payload.never_expires, c.env);
+  if (!expiration) {
     const { minTtl, maxTtl } = ttlConfig(c.env);
-    return errorJson(c, 400, `ttl_seconds must be an integer between ${minTtl} and ${maxTtl}`);
+    return errorJson(c, 400, `ttl_seconds must be 0 or an integer between ${minTtl} and ${maxTtl}; alternatively set never_expires to true`);
   }
 
   const password = normalizePassword(payload.password);
@@ -32,7 +32,7 @@ export async function publishHandler(c: Context<AppBindings>) {
   const id = makePageId();
   const objectKey = objectKeyForPage(id);
   const createdAt = nowIso();
-  const expiresAt = addSecondsIso(ttlSeconds);
+  const expiresAt = expiration.ttlSeconds === null ? null : addSecondsIso(expiration.ttlSeconds);
   const sizeBytes = htmlSizeBytes(html);
   const sha256 = await sha256Hex(html);
   const title = normalizeTitle(payload.title);

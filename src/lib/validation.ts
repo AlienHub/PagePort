@@ -2,6 +2,7 @@ export type PublishPayload = {
   html?: unknown;
   title?: unknown;
   ttl_seconds?: unknown;
+  never_expires?: unknown;
   password?: unknown;
   metadata?: unknown;
 };

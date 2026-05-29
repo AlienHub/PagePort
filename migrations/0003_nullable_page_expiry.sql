@@ -1,13 +1,7 @@
-CREATE TABLE IF NOT EXISTS agents (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  token_hash TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
-  created_at TEXT NOT NULL,
-  last_used_at TEXT
-);
+DROP INDEX IF EXISTS idx_pages_agent_id;
+DROP INDEX IF EXISTS idx_pages_expiry_cleanup;
 
-CREATE TABLE IF NOT EXISTS pages (
+CREATE TABLE pages_new (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL,
   title TEXT NOT NULL,
@@ -29,6 +23,19 @@ CREATE TABLE IF NOT EXISTS pages (
   FOREIGN KEY (agent_id) REFERENCES agents(id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_agents_token_hash ON agents(token_hash);
+INSERT INTO pages_new (
+  id, agent_id, title, mode, status, object_key, sha256, size_bytes, expires_at,
+  created_at, deleted_at, encryption_salt, encryption_iv, encryption_kdf,
+  encryption_iterations, render_count, last_viewed_at, metadata_json
+)
+SELECT
+  id, agent_id, title, mode, status, object_key, sha256, size_bytes, expires_at,
+  created_at, deleted_at, encryption_salt, encryption_iv, encryption_kdf,
+  encryption_iterations, render_count, last_viewed_at, metadata_json
+FROM pages;
+
+DROP TABLE pages;
+ALTER TABLE pages_new RENAME TO pages;
+
 CREATE INDEX IF NOT EXISTS idx_pages_agent_id ON pages(agent_id);
 CREATE INDEX IF NOT EXISTS idx_pages_expiry_cleanup ON pages(status, expires_at);
